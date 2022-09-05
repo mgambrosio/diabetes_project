@@ -1,0 +1,365 @@
+---
+title: "SAS code_Descriptive statistics"
+author: "Maria Ambrosio"
+date: '2022-09-05'
+output: html_document
+---
+
+libname pg1 "/home/u45033532/EPG1V2/data";
+run;
+
+libname heart1 "/home/u45033532/MyExercises/Heart1";
+run;
+
+/* Create temporary table Heart1 (include only participants with age group between 20 and 50y alive) */
+proc sort data=sashelp.heart out=heart1;
+by AgeAtStart descending Cholesterol;
+/* Delete columns where Status is dead and Smoking Status is missing */
+where Status ne "Dead" and Smoking_Status not is null 
+and Weight_Status not is null; 
+/* and Smoking_Status ne "Very Heavy (> 25)"; */
+/* AgeAtStart between 20 and 50  */
+run;
+
+
+
+%let SexGroup=Male;
+/* Create permanent table for Male Health Status */
+libname out "/home/u45033532/MyExercises/Heart1/output";
+run;
+data out.MaleStatus;
+set Heart1;
+where Sex="&SexGroup";
+keep Sex AgeAtStart Smoking_Status Cholesterol Chol_Status Diastolic Systolic BP_Status Weight Height;
+label Diastolic= "DBP(80 mmHg)"
+      Systolic= SBP(120mmHg)
+      Cholesterol= "LBXTC(<200 mg/dL)";
+/* BMI=mean(Height, Weight); */
+run;
+
+proc print data=heart1;
+run; 
+
+proc contents data=heart1;
+run;
+
+/* Check with Mauricio */
+%let SSGroup1= Moderate (6-15);
+title Summary of Male Health Status;
+proc print data=out.maleStatus noobs label;
+where Smoking_Status="&SSGroup1";
+var Chol_Status BP_Status;
+run;
+
+
+title "Summary of Male Health Status";
+ods noproctitle;
+proc means data=out.malestatus; 
+var Cholesterol Diastolic Systolic Weight Height ;
+/* class Smoking_Status AgeAtStart; */
+/* ways 1; */
+run;
+
+/* Descriptive analysis Group Age, Smoking Status*/
+libname   heart1  "/home/u45033532/MyExercises/Heart1";
+proc format;
+value AgeAtStartfmt 20 - 29= "20-29"
+                    30 - 39=  "30-39"
+                    40 - 50=   "40-50"
+                    51 - high= "51+";
+
+/* Pesquisar quando usar $ sign      */
+value $SmokeStatusfmt "Light (1-5)"="L"
+                      "Moderate (6-15)"="M"
+                      "Heavy (16-25)"="H";
+              
+              
+/* value Heightfmt 1= "50-59" */
+/*                 2= "60-69" */
+/*                 3= "70+"; */
+run;
+
+proc print data=heart1;
+format Smoking_Status $SmokeStatusfmt. AgeAtStart AgeAtStartfmt. ;
+run;
+
+proc freq data=heart1;
+tables AgeAtStart*Smoking_Status;
+run;
+
+proc means data=heart1 mean min max std;
+var Diastolic Systolic Cholesterol Height Weight ;
+class Smoking_Status AgeAtStart;
+format Smoking_Status $SmokeStatusfmt. AgeAtStart AgeAtStartfmt.;
+run;
+
+
+/* Creating Demogaphic Table */
+Data heart_overall_status;
+set heart1;
+output;
+Smoking_Status="ALL";
+run;
+
+/* order to smoking status */
+Data heart_ordered_status;
+set heart_overall_status;
+/* length Smoking_Status; */
+if INDEX (Smoking_Status, "Non-smoker")>0 then do; SS="A";ORD=1;END;
+if INDEX (Smoking_Status, "Light (1-5)")>0 then do; SS="B";ORD=2;END;
+if INDEX (Smoking_Status, "Moderate (6-15)")>0 then do; SS="C";ORD=3;END;
+if INDEX (Smoking_Status, "Heavy (16-25")>0 then do; SS="D";ORD=4;END;
+keep Smoking_Status SS ORD Weight_Status AgeAtStart Sex BP_Status Chol_status Diastolic Systolic;
+run;
+
+proc sort ;by SS ORD; run;
+
+
+
+/* Create macorvariables  Big N count Derivation */
+proc sql noprint;
+/* Select distinct observations by the value in each column */
+select count ( *) into : N1 - :N4 From heart_ordered_status
+group by ORD
+order by ORD;
+quit;
+%put &N1 &N2 &N3 &N4;
+
+
+/* Age Statistics; */
+proc summary data= heart_ordered_status NWAY;
+Class SS;
+var AgeAtStart;
+Output out=agestart
+n=_n mean=_mean median=_median std=_std min=_min max=_max;
+run;
+/* Create Statistic table */
+
+/* Decimal Programming */
+data heart_decset;
+set agestart;
+length cat stat $10000.;
+length SSA SSB SSC SSD $10000.;
+/* no decimal */
+n=compress (PUT (_N,5.));
+mean=compress  (PUT (_mean,4.1)); 
+median=compress  (PUT (_median,4.1)); 
+/* two decimals */
+std= compress  (PUT (_std,5.2));
+/* no decimals  */
+min= compress  (PUT (_min,3.)); 
+max=compress  (PUT (_max,3.)); 
+run;
+
+/* Smoking_Status convert to columns */
+proc transpose data=heart_decset out=heart_transpose;
+ID SS;
+var n mean median min max std;
+run;
+
+/* Adding category and order of stats */
+data AgeAtStart_final;
+set heart_transpose;
+/* prevent truncation */
+length cat stat $10000.;
+/* Add continuous variable */
+cat= "AgeAtStart";
+stat=_NAME_;
+
+/* Set Statistic order variable */
+if stat="n" then do;stat="N";OD=1;end;
+if stat="mean" then do;stat="Mean";OD=2;end;
+if stat="median" then do;stat="Median";OD=3;end;
+/* Check with Mauricio how to organize */
+if stat="std" then do;stat="STD";OD=4;end;
+if stat="min" then do;stat="Minimum";OD=5;end;
+if stat="max" then do;stat="Maximum";OD=6;end;
+/* Eliminate column name */
+drop _NAME_ A B C D;
+     SSA=put (A,3.);
+     SSB=put (B,3.);
+     SSC=put (C,3.);
+     SSD=put (D,3.);
+run;
+/* End the ageatstart statistics/Continuous variable */
+
+     
+
+/* Start the sex/ categorical variables */
+proc freq data=heart_ordered_status noprint;
+tables SS*Sex/ out=gender (drop=percent); 
+/* Eliminate missing values */
+run;
+
+data gender;
+set gender;
+length cat stat $10000.;
+cat="gender";
+if Sex="Male" then do;stat="M";OD=1;end;
+if Sex="Female" then do;stat="F";OD=2;end;
+/* Check why NAME is not droped on transpose table */
+drop _NAME_;
+run;
+proc sort;by cat OD;run;
+
+proc transpose data=gender out=gender_;
+by cat od stat;
+ID SS;
+var count;
+run;
+
+
+/* Start Weight statistics */
+proc freq data=heart_ordered_status noprint;
+tables SS*Weight_Status/ out=weight (drop=percent); 
+/* Eliminate missing values */
+run;
+
+data weight;
+set weight;
+length cat stat $10000.;
+cat="weight_status";
+if Weight_Status="Normal" then do;stat="Normal";OD=1;end;
+if Weight_Status="Underweight" then do;stat="UWT";OD=2;end;
+if Weight_Status="Overweight" then do;stat="OVT";OD=3;end;
+run;
+proc sort;by cat OD;run;
+
+proc transpose data=weight out=weight_;
+by cat od stat;
+ID SS;
+var count;
+run;
+
+/* Set Race and Weight counts Ver a percentagem de cada row no grupo de non smokers*/
+data final;
+set gender_ weight_;
+length SSA SSB SSC SSD $10000.;
+
+if A=. then SSA="    0";
+else if A=&N1 then SSA=put (A,5.) || "(100%)";
+/* Calculate the percentage/ Put decimals */
+else SSA=put (A,5.)||"  ("||put (A/&N1*100,4.1) ||")";
+
+if B=. then SSB="    0";
+else if B=&N2 then SSB=put (B,3.) || "(100%)";
+/* Calculate the percentage/ Put decimals */
+else SSB=put (B,3.)||"  ("||put (B/&N2*100,4.1) ||")";
+
+if C=. then SSC="    0";
+else if C=&N3 then SSC=put (B,3.) || "(100%)";
+/* Calculate the percentage/ Put decimals */
+else SSC=put (C,3.)||"  ("||put (C/&N3*100,4.1) ||")";
+
+if D=. then SSD=" 0";
+else if D=&N4 then SSD=put (D,3.) || "(100%)";
+/* Calculate the percentage/ Put decimals */
+else SSD=put (D,3.)||"  ("||put (D/&N4*100,4.1) ||")";
+Drop A B C D _NAME_ _LABEL_;
+run;
+
+
+ 
+/* Set the ageatstart stats and gender and weight */
+Data final_report;
+set final AgeAtStart_final;
+run;
+
+/* Write proc report */
+/* Take all titles and notes from this program ID */
+%mtitlet (progid=rtdemo1);
+/* Escape special characters */
+ods escapechar="^";
+
+ODS proclabel "Subject Demographics";
+title1 "Table 1.1.1";
+title2 "Subject Demographics by Assigned Groups";
+/* Put headline and set spaces between headlines and delete missing values */
+proc report data=final_report NOWD headline headskip split= "|" missing
+style = {outputwidth=100%} spacing=1 wrap
+/* Centre alignment of columns */
+style (header) = {Just=C};
+
+
+column cat stat OD ( '^S={borderbottomcolor=blue borderbottomwidth=4} Treatment' SSB SSC SSD) SSA;
+ 
+define cat / Group "Category"
+style (column) = [Just=left cellwidth=10%]
+style (header) = [Just=left cellwidth=10%];
+
+Define OD/ORDER noprint;
+
+define stat/Group "Statistic"
+style (column) = [Just=left cellwidth=10%]
+style (header) = [Just=left cellwidth=10%];
+
+define SSA/Group "Non-smoker|*(N=&N1)"
+style (column) = [Just=left cellwidth=10%]
+style (header) = [Just=left cellwidth=10%];
+
+define SSB/Group "Light(1-5)|*(N=&N2)"
+style (column) = [Just=left cellwidth=10%]
+style (header) = [Just=left cellwidth=10%];
+
+define SSC/Group "Moderate(6-15)|*(N=&N3)"
+style (column) = [Just=left cellwidth=10%]
+style (header) = [Just=left cellwidth=10%];
+
+define SSD/Group "Heavy(15-25)|*(N=&N4)"
+style (column) = [Just=left cellwidth=10%]
+style (header) = [Just=left cellwidth=10%];
+
+/* Set space before each category */
+Compute before cat;
+/* Create space after each line */
+line '';
+/* Marks the end of one or more programming statements that PROC REPORT executes as it builds  */
+/* the report */
+endcomp;
+run;
+ods _all_ close;
+/* %mpageof; */
+
+
+
+
+
+/* Report data to PDF */
+
+
+%let outpath='/home/u45033532/MyExercises/Heart1/output';
+run;
+
+ods pdf file='&outpath/Demographics.pdf' startpage=no style=BarrettsBlue pdftoc=1; 
+ods noproctitle; 
+title "Correlation of Smoking Start Age and Cholesterol levels";
+proc sgscatter data=heart1;
+plot Smoking_Status*Cholesterol;
+run;
+
+title "Distribution of Maximum Wind";
+proc sgplot data=Heart1;
+    histogram Cholesterol;
+    density Cholesterol;
+run; 
+title;  
+ods proctitle;
+ods pdf;
+
+
+/* Check if BP_Status are correct */
+/* Group BP status group (Optimal/Normal and High) */
+data Heart1_Verif;
+set heart1;
+if Diastolic <=80 or systolic<=120 then BP_Group=1;
+If Diastolic >=91 or systolic >=141 then BP_Group=2;
+run;
+
+proc print data= Heart1_Verif;
+where BP_Group=1;
+run;
+/* THere are 1526 participants with Normal or optimal BP and 682 participants with high blood pressure */
+
+
+
+
