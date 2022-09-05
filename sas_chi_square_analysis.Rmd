@@ -1,0 +1,252 @@
+---
+title: "Chi_square_analysis"
+author: "Maria Ambrosio"
+date: '2022-09-05'
+output: html_document
+---
+
+libname pg1 "/home/u45033532/EPG1V2/data";
+run;
+
+libname heart1 "/home/u45033532/MyExercises/Heart1";
+run;
+
+/* Get an overview of data */
+proc contents data=sashelp.heart;
+run;
+
+/* Create temporary table Heart1 (include only participants with age group between 20 and 50y alive) */
+proc sort data=sashelp.heart out=heart1;
+by AgeAtStart descending Cholesterol;
+/* Delete columns where Status is dead and Smoking Status is missing */
+where Status ne "Dead" and Smoking_Status not is null 
+and Weight_Status not is null;
+by descending _ALL_;
+run;
+
+
+
+/* Estimating the mean age to start smoking */
+Data heart_overall_status;
+set heart1;
+output;
+Smoking_Status="ALL";
+run;
+
+/* order to smoking status */
+Data heart_ordered_status;
+set heart_overall_status;
+/* length Smoking_Status; */
+if INDEX (Smoking_Status, "Non-smoker")>0 then do; SS="A";ORD=1;END;
+if INDEX (Smoking_Status, "Light (1-5)")>0 then do; SS="B";ORD=2;END;
+if INDEX (Smoking_Status, "Moderate (6-15)")>0 then do; SS="C";ORD=3;END;
+if INDEX (Smoking_Status, "Heavy (16-25")>0 then do; SS="D";ORD=4;END;
+if INDEX (Smoking_Status, "Very Heavy (> 25")>0 then do; SS="E";ORD=5;END;
+keep Smoking_Status SS ORD Weight_Status AgeAtStart Sex BP_Status Chol_status Diastolic Systolic;
+run;
+
+proc sort ;by SS ORD; run;
+
+/* Create macorvariables  Big N count Derivation */
+proc sql noprint;
+/* Select distinct observations by the value in each column */
+select count ( *) into : N1 - :N5 From heart_ordered_status
+group by ORD
+order by ORD;
+quit;
+%put &N1 &N2 &N3 &N4 &N5;
+
+
+/* Age Statistics; */
+proc summary data= heart_ordered_status NWAY;
+Class SS;
+var AgeAtStart;
+Output out=agestart
+n=_n mean=_mean median=_median std=_std min=_min max=_max;
+run;
+/* Create Statistic table */
+
+/* Decimal Programming */
+data heart_decset;
+set agestart;
+length cat stat $10000.;
+length SSA SSB SSC SSD $10000.;
+/* no decimal */
+n=compress (PUT (_N,5.));
+mean=compress  (PUT (_mean,4.1)); 
+median=compress  (PUT (_median,4.1)); 
+/* two decimals */
+std= compress  (PUT (_std,5.2));
+/* no decimals  */
+min= compress  (PUT (_min,3.)); 
+max=compress  (PUT (_max,3.)); 
+run;
+
+/* Smoking_Status convert to columns */
+proc transpose data=heart_decset out=heart_transpose;
+ID SS;
+var n mean median min max std;
+run;
+
+/* Adding category and order of stats */
+data AgeAtStart_final;
+set heart_transpose;
+/* prevent truncation */
+length cat stat $10000.;
+/* Add continuous variable */
+cat= "AgeAtStart";
+stat=_NAME_;
+
+/* Set Statistic order variable */
+if stat="n" then do;stat="N";OD=1;end;
+if stat="mean" then do;stat="Mean";OD=2;end;
+if stat="median" then do;stat="Median";OD=3;end;
+/* Check with Mauricio how to organize */
+if stat="std" then do;stat="STD";OD=4;end;
+if stat="min" then do;stat="Minimum";OD=5;end;
+if stat="max" then do;stat="Maximum";OD=6;end;
+/* Eliminate column name */
+drop _NAME_ A B C D;
+     SSA=put (A,3.);
+     SSB=put (B,3.);
+     SSC=put (C,3.);
+     SSD=put (D,3.);
+run;
+/* End the ageatstart statistics/Continuous variable */
+     
+title Estimates of mean smoking start age by sex;
+proc means data=ordered_smoking_status_grouped  mean median max min std;
+var AgeAtStart;
+where Sex= "Female";
+run;
+
+proc means data=ordered_smoking_status_grouped  mean median max min std;
+var AgeAtStart;
+where Sex= "Male";
+run;
+
+
+/* Chi Square test of independence */
+
+proc format;
+value $Sexfmt 'Female'='1' 'Male'='0';
+value $Smoking_Statusfmt 'Light (1-5)'='1' 'Moderate (6-15)'='2' 'Heavy (16-25)'='3' 'Very Heavy (> 25)'='4'; 
+value AgeAtStartfmt 20 - 29= "1"
+                    30 - 39=  "2"
+                    40 - 50=   "3"
+                    51 - high= "4";
+run;      
+
+/* Avaliar as idades que cada smoking category comecou a fumar */
+ods graphics on;
+title1 "Age of Start Smoking Proportions Across Smoking Groups";
+title2 "Light, Moderate and Heavy Smokers";
+proc freq data=heart1 order= internal;
+format Smoking_Status $Smoking_Statusfmt. AgeAtStart AgeAtStartfmt. Sex $Sexfmt.;
+/* Weight AgeAtStart; */
+tables Smoking_Status*AgeAtStart/nocum plots=freqplot(group=row scale=grouppercent orient=horizontal) ;
+/* plots=freqplot(twoway=stacked orient=horizonta); */
+where Smoking_Status ne "Non-smoker";
+run;
+
+
+/* Print table to see if formats were created  */
+/* proc print data=heart1; */
+/* format  Smoking_Status $Smoking_Statusfmt. AgeAtStart AgeAtStartfmt. Sex $Sexfmt.; */
+/* run; */
+ 
+
+/* H0=Age of start smoking is not associated with the number of cigarettes smoked per day  */
+
+data smoking_dataanalysis;
+input Smoking_Status AgeAtStart N;
+Label AgeAtStart="Age of Smoking Start";  
+/* format Smoking_Status $Smoking_Statusfmt. AgeAtStart AgeAtStartfmt. Sex $Sexfmt.; */
+datalines;
+1 1 2 
+1 2 197
+1 3 137
+1 4 55
+2 1 3
+2 2 213
+2 3 113
+2 4 33
+3 1 7
+3 2 358
+3 3 190
+3 4 48
+4 1 1
+4 2 127
+4 3 90
+4 4 15
+;
+run;
+
+/* Create permanent table  */
+libname out "/home/u45033532/MyExercises/Heart1/output";
+run;
+data smoking_light_moderate; 
+set smoking_dataanalysis;
+/* by descending _ALL_; */
+format Smoking_Status $Smoking_Statusfmt.;
+run;
+
+
+
+/* Print table created  */
+/* proc print data= smoking_light_moderate label noobs; */
+/* label Smoking_Status= 'Smoking Status Group' AgeAtStart= 'Smoking Start Age'; */
+/* run; */
+
+/* Vizualize count of AgeAtStart across smoking groups  based on the datalines created */
+ods graphics on;
+ods noproctitle;
+title Age of Start Smoking Proportions Across Smoking Groups;
+proc freq data = smoking_light_moderate order=internal;
+weight N;
+table AgeAtStart*Smoking_Status/nocum plots=freqplot(group=row scale=grouppercent orient=horizontal);
+run;
+title;
+
+
+
+/* Conduct chi-square test of independence to estimate the compare smoking status mean age of start smoking  */
+
+
+proc freq data=smoking_dataanalysis;
+tables AgeAtStart*Smoking_Status/Chisq measures nocol norow nopercent;
+Weight N;
+run;
+/* t-statistis value 21.55 */
+/* Degrees of freedom 9 */
+/* pvalue 0.01 */
+
+proc freq data=smoking_light_moderate order=freq;
+Weight N;
+tables AgeAtStart*Smoking_Status/relrisk;
+run;
+
+proc freq data=smoking_light_moderate;
+tables AgeAtStart*Smoking_Status/ relrisk plots(only)=(oddsratioplot(stats)) cmh;
+Weight N;
+run;
+
+proc univariate data=smoking_dataanalysis;
+Weight N;
+var Smoking_Status;
+run;
+
+proc ttest data=smoking_dataanalysis H0=0 Sides=2;
+Weight N;
+class Smoking_Status;
+Var AgeAtStart;
+run;
+
+/* Create Demographic table */
+
+
+
+
+
+
+
