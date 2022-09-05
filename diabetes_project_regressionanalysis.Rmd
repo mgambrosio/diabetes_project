@@ -1,0 +1,26 @@
+---
+title: "Diabetes_regression_analysis"
+author: "Maria Ambrosio"
+date: '2022-09-05'
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(broom)
+library(patchwork)
+library(MatchIt)
+library(ggdag)
+library(scales)
+library("readxl")
+library(png)
+library(modelsummary)
+library(ggridges)
+library(ggplot2)
+library(ggpubr)
+
+```
+```{r}
+diabetes <- read_csv("data/diabetes_012_health_indicators_BRFSS2015.csv", guess_max = 10000)
+```
+
