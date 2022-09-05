@@ -1,0 +1,132 @@
+---
+title: "sas_macrovariables"
+author: "Maria Ambrosio"
+date: '2022-09-05'
+output: html_document
+---
+
+libname nhanes1 "/home/u45033532/MyExercises/NHANES";
+run;
+
+
+
+/* create macrovariable to import dataset */
+%let path = /home/u45033532/MyExercises/NHANES/raw_data/adult19.csv;
+options validvarname=v7; 
+
+proc import datafile= "&path"
+out= adult19
+dbms= csv;
+run;
+
+
+/* Look to summary of dataset variables */
+proc contents data = adult19;
+run;
+
+
+/* Create temporary table with variables that will be used in the analysis */
+libname adult19 "/home/u45033532/MyExercises/NHANES/raw_data";
+run;
+data adult19.raw;
+set adult19;
+keep FAMINCTC_A AGE65 ASPMEDEV_A ASPMEDNOWN_A ASPONOWN_A CHDEV_A CHLMED_A CHOLLAST_A DIBAGETC_A DIBPILL_A  PREDIB_A WEIGHTLBTC_A ANGEV_A STREV_A HEIGHTTC_A  BPLAST_A HYPDIF_A HYPMED_A RACEALLP_A SMKEV_A DIBEV_A; 
+rename FAMINCTC_A= Family_income 
+       AGE65 = Age 
+       ASPMEDEV_A = Received_aspirin_recommendation
+       ASPMEDNOWN_A = Follow_aspirin_recommendation
+       ASPONOWN_A = Taking_low_dose_aspirin
+       CHDEV_A = CHD_diagnose 
+       CHLMED_A = Taking_chol_doctor_prescrip
+       CHOLLAST_A = Last_time_chol_check
+       DIBAGETC_A = Diabetes_diagnose_age
+       DIBPILL_A = Taking_diabetes_pill
+       PREDIB_A = PreDiabetes_diagnose
+       WEIGHTLBTC_A = Weight
+       HEIGHTTC_A = Height
+       ANGEV_A = Angina_history
+       STREV_A = Stroke_history
+       BPLAST_A = Last_check_BP
+       HYPDIF_A = BP_confirm_visits
+       HYPMED_A = BP_medic
+       RACEALLP_A = Race
+       SMKEV_A = Smoke_history
+       DIBEV_A = Diabetes_diagnose; 
+ run;
+
+
+/* Delete missing rows in age column */
+proc sort data=Adult19.raw out=Adult19.raw;
+by descending Age;
+where Age not is null;
+/* Delete columns where Status is dead and Smoking Status is missing */
+/* and Weight_Status not is null;  */
+/* and Smoking_Status ne "Very Heavy (> 25)"; */
+/* AgeAtStart between 20 and 50  */
+run;
+
+/* Update row data */
+proc format; 
+value Agefmt 1="< 65"
+          2="=> 65"
+                   ;
+
+proc print data=adult19.raw;
+format Age Agefmt.;
+run;
+
+
+
+
+              
+/* value Heightfmt 1= "50-59" */
+/*                 2= "60-69" */
+/*                 3= "70+"; */
+run;
+
+
+
+/* Delete missing rows Find code that delete all missing values in dataset */
+/* https://www.geeksforgeeks.org/sas-delete-empty-rows/ */
+OPTIONS missing = ' ';
+data adult19.raw;
+    SET adult19.raw;
+    IF missing(cats(of _all_)) 
+    THEN 
+      DELETE;
+run;
+
+data adult19.raw;
+    SET adult19.raw; 
+    IF  nmiss(of _numeric_) > 0
+       THEN 
+     DELETE;
+run;
+
+
+/* Rename information on the columns */
+
+libname adult19 "/home/u45033532/MyExercises/NHANES/raw_data";
+run;
+proc format;
+value $racefmt 1 = "white only";
+run;
+
+proc print data=adult19;
+format Race $racefmt.;
+run;
+
+
+proc format;
+value AgeAtStartfmt 20 - 29= "20-29"
+                    30 - 39=  "30-39"
+                    40 - 50=   "40-50"
+                    51 - high= "51+";
+
+/* Pesquisar quando usar $ sign      */
+value $SmokeStatusfmt "Light (1-5)"="L"
+                      "Moderate (6-15)"="M"
+                      "Heavy (16-25)"="H";
+              
+
+
